@@ -1,0 +1,56 @@
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+/** True when real (non-placeholder) Supabase credentials are present. Client-safe. */
+export function isSupabaseConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  return (
+    Boolean(url && key) &&
+    !url.includes("your-project-ref") &&
+    key.length > 20 &&
+    !key.startsWith("your-")
+  );
+}
+
+/** "2 pieces" / "250 g" / "unknown" */
+export function formatQuantity(quantity: number | null, unit: string | null): string {
+  if (quantity == null) return unit ? `some` : "unknown";
+  if (unit) {
+    const label = quantity % 1 === 0 ? String(quantity) : String(quantity);
+    return `${label} ${unit}`;
+  }
+  return String(quantity);
+}
+
+export function formatMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
+}
+
+export function totalMinutes(pre: number, cook: number): number {
+  return Math.max(pre, cook);
+}
+
+export function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+export function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - now.getTime()) / 86_400_000);
+}

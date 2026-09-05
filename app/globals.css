@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-cream-50 text-ink-800 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Subtle warm background texture so pages are never flat. */
+.bg-app {
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(47, 133, 90, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(217, 85, 60, 0.05), transparent 60%),
+    #fbf8f1;
+}
+
+::selection {
+  background: rgba(47, 133, 90, 0.2);
+}
+
+/* Focus ring utility */
+@layer components {
+  .focus-ring {
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-herb-500 focus-visible:ring-offset-2 focus-visible:ring-offset-cream-50;
+  }
+}
+
+/* Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdcb transparent;
+}
+
+/* Tremor needs its base classes for dark text on light bg; we keep light only. */
+.tremor-card {
+  @apply bg-white;
+}
