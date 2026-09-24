@@ -60,7 +60,7 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
       quantity: parseQty(draft.quantity),
       unit: draft.unit || null,
       category: (draft.category || "other") as Category,
-      expiration_date: draft.expiration_date || null,
+      expirationDate: draft.expiration_date || null,
     });
     setDraft(emptyDraft);
     setAdding(false);
@@ -87,7 +87,7 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
       quantity: parseQty(editDraft.quantity),
       unit: editDraft.unit || null,
       category: (editDraft.category || "other") as Category,
-      expiration_date: editDraft.expiration_date || null,
+      expirationDate: editDraft.expiration_date || null,
     });
     setEditing(null);
     setBusy(false);

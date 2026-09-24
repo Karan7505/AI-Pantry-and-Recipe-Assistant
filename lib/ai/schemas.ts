@@ -75,14 +75,17 @@ export type AiNormalizeResult = z.infer<typeof normalizeResultSchema>;
 
 // ── Form / API input schemas (validated server-side) ─────────────────────────
 
+// Server-side upload guard (audit H-1): strict MIME allowlist + hard per-image
+// size cap in base64 chars (~3.3 MB binary). Client-side limits are advisory.
+const MAX_DATA_URL_CHARS = 4_500_000;
+const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
 export const scanInputSchema = z.object({
-  // base64 data URLs of the uploaded images (kept in-memory; images are not
-  // persisted to Storage unless the user opts in).
   images: z
-    .array(z.string().min(1))
+    .array(z.string().min(1).max(MAX_DATA_URL_CHARS))
     .min(1)
     .max(6)
-    .refine((arr) => arr.every((s) => s.startsWith("data:")), "images must be data URLs"),
+    .refine((arr) => arr.every((s) => IMAGE_DATA_URL.test(s)), "Images must be base64 data URLs of type jpeg/png/webp"),
 });
 export type ScanInput = z.infer<typeof scanInputSchema>;
 
@@ -92,7 +95,7 @@ export const recipeFiltersSchema = z.object({
   maxCookTimeMinutes: z.number().int().min(5).max(720).optional(),
   cuisine: z.string().trim().max(60).optional(),
   dietary: z.string().trim().max(80).optional(),
-  excluded: z.array(z.string().trim().min(1)).default([]),
+  excluded: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   count: z.number().int().min(1).max(8).optional(),
 });
 export type RecipeFilters = z.infer<typeof recipeFiltersSchema>;

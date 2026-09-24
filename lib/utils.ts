@@ -17,6 +17,29 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
+/**
+ * Return a safe same-origin path for post-auth redirect (audit M-1).
+ * Rejects absolute URLs (https://…), protocol-relative (//…), and control chars.
+ * Falls back to `fallback` for anything unsafe.
+ */
+export function sanitizeNextPath(next: string | null | undefined, fallback = "/dashboard"): string {
+  if (!next) return fallback;
+  const trimmed = next.trim();
+  // Must be a single absolute path: starts with "/", not "//", no backslashes,
+  // no whitespace, and no "scheme:" pattern.
+  if (
+    trimmed.startsWith("/") &&
+    !trimmed.startsWith("//") &&
+    !trimmed.includes("\\") &&
+    !trimmed.includes("%") &&
+    !/\s/.test(trimmed) &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return fallback;
+}
+
 /** "2 pieces" / "250 g" / "unknown" */
 export function formatQuantity(quantity: number | null, unit: string | null): string {
   if (quantity == null) return unit ? `some` : "unknown";

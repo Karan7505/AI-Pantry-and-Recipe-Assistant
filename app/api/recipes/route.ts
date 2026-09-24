@@ -4,10 +4,11 @@ import { getUserPantry } from "@/lib/db";
 import { generateRecipes } from "@/lib/ai/services";
 import { recipeFiltersSchema } from "@/lib/ai/schemas";
 import { AiError } from "@/lib/ai/errors";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 /**
  * POST /api/recipes
@@ -19,6 +20,10 @@ export const maxDuration = 90;
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+
+  if (!rateLimit(user.id, "recipes")) {
+    return NextResponse.json({ ok: false, error: "Too many recipe generations right now. Please try again in an hour." }, { status: 429 });
+  }
 
   let body: unknown;
   try {
@@ -38,7 +43,7 @@ export async function POST(req: Request) {
   try {
     pantry = await getUserPantry(user.id);
   } catch (err) {
-    console.error("[recipes] pantry read failed:", err);
+    console.error("[recipes] pantry read failed:", (err as Error).message);
     return NextResponse.json(
       { ok: false, error: "Could not load your pantry. Please try again." },
       { status: 500 },
@@ -55,7 +60,7 @@ export async function POST(req: Request) {
     if (err instanceof AiError) {
       return NextResponse.json({ ok: false, error: err.userMessage, code: err.code }, { status: 502 });
     }
-    console.error("[recipes] unexpected error:", err);
+    console.error("[recipes] unexpected error:", (err as Error).name, (err as Error).message);
     return NextResponse.json({ ok: false, error: "Recipe generation failed. Please try again." }, { status: 500 });
   }
 }

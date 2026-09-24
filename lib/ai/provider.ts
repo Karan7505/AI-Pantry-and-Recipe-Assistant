@@ -73,9 +73,11 @@ async function callOpenAI(cfg: ProviderConfig, req: StructuredRequest): Promise<
 
 async function callGemini(cfg: ProviderConfig, req: StructuredRequest): Promise<string> {
   const model = req.vision ? cfg.visionModel : cfg.textModel;
+  // Key goes in a header, never the URL (audit M-5): URLs are far more likely
+  // to be persisted in proxy/access/retry logs than headers.
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}` +
-    `:generateContent?key=${encodeURIComponent(cfg.apiKey)}`;
+    `:generateContent`;
 
   const parts: unknown[] = [{ text: req.user }];
   for (const img of req.images ?? []) {
@@ -87,7 +89,7 @@ async function callGemini(cfg: ProviderConfig, req: StructuredRequest): Promise<
 
   return await fetchJson<GeminiResponse>(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.apiKey },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
       contents: [{ role: "user", parts }],

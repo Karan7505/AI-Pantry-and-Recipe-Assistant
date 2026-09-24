@@ -4,7 +4,7 @@
 
 Pantry is a full-stack web app that turns photos of your fridge, pantry, or grocery bags into a living food inventory. It uses vision AI to detect ingredients, ranks recipes by how much you already have, builds a grocery list for the gap, and estimates per-serving nutrition — all persisted per user with strict row-level security.
 
-> Built with Next.js 14 (App Router), TypeScript, Supabase, a provider-agnostic AI layer (OpenAI or Gemini), and Tremor for data visualization.
+> Built with Next.js 16 (App Router), TypeScript, Supabase, a provider-agnostic AI layer (OpenAI or Gemini), and Tremor for data visualization.
 
 ---
 
@@ -60,7 +60,7 @@ Pantry is a full-stack web app that turns photos of your fridge, pantry, or groc
 
 ### Accounts & Security
 - Supabase email/password auth with cookie-backed sessions (`@supabase/ssr`)
-- Route protection via Next.js middleware (unauthenticated → `/login?next=…`)
+- Route protection via the Next.js [proxy](https://nextjs.org/docs/app/api-reference/file-conventions/proxy) file (unauthenticated → `/login?next=…`)
 - **Row Level Security** on every table — a user can only ever read or write their own rows
 - Provider-agnostic AI layer: typed `AiError` codes (`auth`, `rate_limit`, `timeout`, `network`, `invalid_response`, …) with user-safe messages; raw stack traces never reach the UI
 - **Every AI response is validated with Zod** before it is stored or rendered — invalid model output is rejected, never trusted
@@ -95,7 +95,7 @@ Pantry is a full-stack web app that turns photos of your fridge, pantry, or groc
 
 1. **Server owns trust.** All DB access happens server-side through [lib/db.ts](lib/db.ts); RLS is the second wall. Server actions re-verify the session on every call.
 2. **AI is a bounded, typed dependency.** [lib/ai/services.ts](lib/ai/services.ts) exposes four functions (`analyzePantryImage`, `generateRecipes`, `generateNutrition`, `normalizeIngredients`). Each maps raw model JSON through a Zod schema, falls back to deterministic logic where safe (e.g. normalization), and throws a typed `AiError` otherwise. The UI only ever sees typed data or a user-safe message.
-3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 48 offline unit tests.
+3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 60 offline unit tests.
 4. **Provider portability.** [lib/config.ts](lib/config.ts) resolves OpenAI vs Gemini from environment variables; [lib/ai/provider.ts](lib/ai/provider.ts) isolates HTTP, timeouts (60 s), rate-limit/auth mapping, and JSON extraction (handles markdown fences and embedded objects).
 
 **Data model** (see [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql))
@@ -116,14 +116,14 @@ Every table is RLS-protected: `user_id = auth.uid()` for direct tables; grocery 
 
 | Layer | Technology |
 |---|---|
-| Framework | [Next.js 14](https://nextjs.org) (App Router, Server Components, Server Actions, middleware) |
+| Framework | [Next.js 16](https://nextjs.org) (App Router, Server Components, Server Actions, proxy-based route protection) |
 | Language | TypeScript 5 (strict mode) |
 | Backend / DB / Auth | [Supabase](https://supabase.com) — Postgres, Row Level Security, `@supabase/ssr` |
 | AI (vision + text) | OpenAI (`gpt-4o` default) **or** Google Gemini (`gemini-1.5-flash` default) — auto-selected, swappable via env |
 | Validation | [Zod](https://zod.dev) — all AI output and API inputs |
 | UI | React 18 + Tailwind CSS (custom herb/tomato/cream design system) |
 | Data viz | [`@tremor/react`](https://tremor.so) — nutrition charts + stat cards |
-| Testing | [Vitest](https://vitest.dev) — 48 offline unit tests |
+| Testing | [Vitest](https://vitest.dev) — 60 offline unit tests |
 | Lint | ESLint (`next/core-web-vitals`) |
 
 ---
@@ -132,7 +132,7 @@ Every table is RLS-protected: `user_id = auth.uid()` for direct tables; grocery 
 
 ### Prerequisites
 
-- **Node.js 18.17+** (tested on Node 20)
+- **Node.js 20.19+** (Next 16 requirement; Node 22 LTS recommended — production should not run on an EOL runtime)
 - A [Supabase](https://supabase.com) account (free tier works)
 - An OpenAI **or** Google AI Studio API key
 
@@ -291,7 +291,7 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
 │   ├── match.test.ts                 #   scoring + ranking
 │   ├── schemas.test.ts               #   Zod contracts + JSON extraction
 │   └── ai-services.test.ts           #   services with mocked model transport
-├── middleware.ts                     # Session refresh + route protection
+├── proxy.ts                          # Session refresh + route protection (Next 16 proxy convention)
 ├── .env.example                      # Documented env template
 ├── next.config.mjs
 ├── tailwind.config.ts
@@ -341,7 +341,7 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
 | `npm run build` | Typecheck + lint + production build |
 | `npm start` | Serve the production build |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | `next lint` (core-web-vitals) |
+| `npm run lint` | `eslint .` (next/core-web-vitals) |
 | `npm test` | Run all Vitest suites once |
 | `npm run test:watch` | Vitest in watch mode |
 
@@ -351,8 +351,8 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
 
 ```bash
 npm test
-# Test Files  4 passed (4)
-#      Tests  48 passed (48)
+# Test Files  6 passed (6)
+#      Tests  60 passed (60)
 ```
 
 The suite is fully offline — no API keys or network required. It covers:
@@ -363,6 +363,24 @@ The suite is fully offline — no API keys or network required. It covers:
 | `tests/match.test.ts` | Match scoring, availability flagging, ranking tie-breaks, label thresholds |
 | `tests/schemas.test.ts` | Every Zod contract (valid/invalid), plus tolerant JSON extraction (fences, embedded objects, garbage) |
 | `tests/ai-services.test.ts` | All four services with a mocked transport: happy paths, empty results, malformed model output, provider errors (rate limit, timeout), and deterministic fallbacks |
+| `tests/ratelimit.test.ts` | Per-user/per-route window limits, expiry, isolation |
+| `tests/security.test.ts` | Post-auth redirect sanitization (open-redirect guard), scan upload MIME/size caps, filter input caps |
+
+---
+
+## Security
+
+Controls implemented (see [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for the full audit + remediation log):
+
+- **Session**: cookie is `HttpOnly`, `Secure` in production, `SameSite=Lax`, 30-day max age — set consistently in the server client, proxy, and browser client.
+- **Authorization**: every server action re-verifies the session; uid is always server-derived; every id-based DB query is scoped to the user **at the query level** *and* by Row Level Security (defense in depth).
+- **Input**: all API bodies Zod-validated; scan uploads have strict server-side MIME + per-image size caps with 413 on oversized bodies; recipe/pantry persistence re-validated server-side with field caps.
+- **Abuse**: per-user, per-operation rate limits on all paid AI endpoints and high-fan-out actions (429 when exceeded).
+- **Headers**: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` on every route.
+- **Secrets**: no service-role key in the app; privileged keys never inlined into client bundles; Gemini key sent via header, not URL.
+- **AI output**: never trusted — every model response is Zod-validated; user-facing errors are canned and safe.
+
+**Still required before launch (manual):** apply `supabase/migrations/0002_grocery_items_update_policy.sql` to any existing Supabase project, run the two-account RLS verification matrix against the live database, set Supabase auth password minimum ≥ 8 in the dashboard, and deploy on Node 22.
 
 ---
 

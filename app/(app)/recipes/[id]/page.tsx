@@ -11,12 +11,13 @@ import AddToGrocery from "@/components/add-to-grocery";
 export const metadata = { title: "Recipe" };
 export const dynamic = "force-dynamic";
 
-export default async function RecipeDetailPage({ params }: { params: { id: string } }) {
+export default async function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  const { id } = await params; // Next 15: params is async
   const [row, pantry] = await Promise.all([
-    getRecipe(user.id, params.id).catch(() => null),
+    getRecipe(user.id, id).catch(() => null),
     getUserPantry(user.id).catch(() => []),
   ]);
   if (!row) notFound();

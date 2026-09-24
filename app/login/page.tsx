@@ -3,6 +3,10 @@ import AuthForm from "@/components/auth-form";
 
 export const metadata = { title: "Sign in" };
 
+// Session-aware page: render per request (also avoids static prerendering of
+// the Suspense-wrapped client form).
+export const dynamic = "force-dynamic";
+
 function Fallback() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center">

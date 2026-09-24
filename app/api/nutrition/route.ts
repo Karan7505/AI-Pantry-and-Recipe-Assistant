@@ -3,13 +3,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { generateNutrition } from "@/lib/ai/services";
 import { z } from "zod";
 import { AiError } from "@/lib/ai/errors";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   title: z.string().min(1).max(140),
-  ingredients: z.array(z.string().min(1)).min(1).max(40),
+  ingredients: z.array(z.string().trim().min(1).max(120)).min(1).max(40),
 });
 
 /**
@@ -20,6 +22,10 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, error: "Not authenticated." }, { status: 401 });
+
+  if (!rateLimit(user.id, "nutrition")) {
+    return NextResponse.json({ ok: false, error: "Too many requests right now. Please try again in an hour." }, { status: 429 });
+  }
 
   let body: unknown;
   try {
@@ -39,7 +45,7 @@ export async function POST(req: Request) {
     if (err instanceof AiError) {
       return NextResponse.json({ ok: false, error: err.userMessage, code: err.code }, { status: 502 });
     }
-    console.error("[nutrition] unexpected error:", err);
+    console.error("[nutrition] unexpected error:", (err as Error).name, (err as Error).message);
     return NextResponse.json({ ok: false, error: "Could not estimate nutrition. Please try again." }, { status: 500 });
   }
 }

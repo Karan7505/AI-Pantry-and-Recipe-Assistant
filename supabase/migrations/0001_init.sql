@@ -116,6 +116,9 @@ create policy "grocery_items_insert" on public.grocery_items
 create policy "grocery_items_update" on public.grocery_items
   for update using (
     exists (select 1 from public.grocery_lists l where l.id = grocery_list_id and l.user_id = auth.uid())
+  )
+  with check (
+    exists (select 1 from public.grocery_lists l where l.id = grocery_list_id and l.user_id = auth.uid())
   );
 create policy "grocery_items_delete" on public.grocery_items
   for delete using (

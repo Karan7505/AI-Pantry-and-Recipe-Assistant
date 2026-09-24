@@ -1,27 +1,37 @@
 import { createClient } from "./supabase/server";
 
-/** Public, user-safe auth error message. */
+/**
+ * Public, user-safe auth error message (audit L-2/L-4):
+ * - generic where possible to avoid account enumeration
+ * - raw provider text never returned to the client (logged server-side only)
+ */
 export function publicError(err: unknown): string {
   const msg =
     (err as { error_description?: string; message?: string })?.error_description ||
     (err as Error)?.message ||
     "Authentication failed.";
-  if (/rate limit|too many/i.test(msg)) return "Too many attempts. Please wait and try again.";
+  console.error("[auth]", msg);
+  if (/rate limit|too many/i.test(msg)) return "Too many attempts. Please wait a moment and try again.";
   if (/invalid login/i.test(msg)) return "Invalid email or password.";
-  if (/already been registered/i.test(msg)) return "That email is already registered.";
-  if (/email.*not.*confirmed|confirm/i.test(msg)) return "Please confirm your email before signing in.";
-  return msg;
+  if (/already been registered/i.test(msg))
+    return "Unable to create the account. If you already have one, sign in instead.";
+  if (/email confirmation/i.test(msg)) return "Please confirm your email before signing in.";
+  if (/password/i.test(msg)) return "Please check your password and try again.";
+  return "Authentication failed. Please try again.";
 }
 
-/** Get the current authenticated user, or null. Server components/actions only. */
+/** Authenticated user, or null. Server-only (uses request cookies). */
 export async function getCurrentUser() {
-  const supabase = createClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error) return null;
-  return data.user;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
 }
 
-/** Require auth; returns the user or null. */
-export async function requireUser() {
-  return getCurrentUser();
+/** Returns user id or throws; use inside server actions. */
+export async function requireUid(): Promise<string> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  return user.id;
 }

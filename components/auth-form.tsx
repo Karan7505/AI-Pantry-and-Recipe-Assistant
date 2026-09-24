@@ -4,12 +4,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInAction, signUpAction } from "@/lib/actions";
+import { sanitizeNextPath } from "@/lib/utils";
 import { Button, Card, Field, Input } from "./ui";
 
 export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  // Only same-origin absolute paths are accepted as post-auth redirects (audit M-1).
+  const next = React.useMemo(
+    () => sanitizeNextPath(params.get("next"), "/dashboard"),
+    [params],
+  );
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -28,8 +33,8 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
     setLoading(true);

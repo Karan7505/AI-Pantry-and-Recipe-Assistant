@@ -1,17 +1,32 @@
 import { createServerClient } from "@supabase/ssr";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 /**
- * Server-side Supabase client for Route Handlers and Server Components/Actions.
- * Reads the user session from the request cookie jar (user-scoped, RLS applied).
+ * Hardened session cookie options (audit H-2):
+ * - httpOnly: the auth token is never readable from browser JS (this app never
+ *   reads it client-side — all auth goes through server actions/route handlers)
+ * - secure: enforced in production (HTTPS)
+ * - maxAge: 30 days instead of the 400-day library default
  */
-export function createClient() {
-  const cookieStore = cookies();
+const cookieOptions = {
+  path: "/",
+  sameSite: "lax" as const,
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  maxAge: 60 * 60 * 24 * 30,
+};
+
+/**
+ * Server-side Supabase client (Next 15: cookies() is async).
+ * User-scoped; RLS applies on top.
+ */
+export async function createClient() {
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions,
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -19,27 +34,14 @@ export function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+              cookieStore.set(name, value, { ...cookieOptions, ...options }),
             );
           } catch {
-            // Called from a Server Component — safe to ignore; middleware
-            // refreshes the session.
+            // Called from a Server Component — safe to ignore when the
+            // middleware refreshes sessions.
           }
         },
       },
     },
   );
-}
-
-/**
- * Service-role client. Bypasses RLS — use ONLY inside privileged server
- * operations. Never import into client components; the key must stay server-side.
- */
-export function createServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createSupabaseClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
 }
