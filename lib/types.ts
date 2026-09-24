@@ -57,7 +57,6 @@ export interface PantryItem {
 export interface ScanRow {
   id: string;
   user_id: string;
-  image_url: string;
   detected_data: Ingredient[];
   created_at: string;
 }

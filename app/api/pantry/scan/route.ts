@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   try {
     const ingredients = await analyzePantryImage(parsed.data.images);
-    await createScan(user.id, null, ingredients);
+    await createScan(user.id, ingredients);
     return NextResponse.json({ ok: true, data: { ingredients } });
   } catch (err) {
     if (err instanceof AiError) {

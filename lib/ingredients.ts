@@ -142,11 +142,119 @@ export function mergeIngredients(items: MergeInput[]): MergedItem[] {
       out.push({
         name: first.name,
         normalized_name: first.normalized_name,
-        unit: g.length > 1 && normalizeUnit(first.unit) ? first.unit : first.unit,
+        unit: first.unit,
         quantity: allKnown ? g.reduce((sum, x) => sum + (x.quantity ?? 0), 0) : null,
         sources: g.length,
       });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Merge a fresh batch (a confirmed scan or manual add) INTO an existing pantry
+ * list, accumulating quantities instead of overwriting them (blueprint KI-2).
+ *
+ * Rules per normalized name:
+ *  - name only in existing  → kept as-is
+ *  - name only in incoming  → merged incoming row
+ *  - in both, units compatible (either one null, or same canonical unit) →
+ *      quantities accumulate: known + known → sum; known + null → keep known;
+ *      null + null → null. Unit: the known one (prefers existing).
+ *  - in both, units incompatible (both known, e.g. cup vs g) → incoming wins
+ *      (overwrite), because combining different units would be wrong
+ */
+export function mergeWithPantry(existing: MergeInput[], incoming: MergeInput[]): MergedItem[] {
+  const batchMerged = mergeIngredients(incoming);
+  const existingByName = new Map<string, MergeInput>();
+  for (const e of existing) {
+    const key = normalizeIngredientName(e.name);
+    if (key && !existingByName.has(key)) existingByName.set(key, e);
+  }
+
+  const out: MergedItem[] = [];
+  const consumed = new Set<string>();
+
+  for (const item of batchMerged) {
+    const ex = existingByName.get(item.normalized_name);
+    if (!ex) {
+      out.push(item);
+      continue;
+    }
+    consumed.add(item.normalized_name);
+    const compatible =
+      ex.unit == null || item.unit == null || unitsCompatible(ex.unit, item.unit);
+    if (compatible) {
+      let quantity: number | null;
+      if (ex.quantity != null && item.quantity != null) quantity = ex.quantity + item.quantity;
+      else if (ex.quantity != null) quantity = ex.quantity;
+      else if (item.quantity != null) quantity = item.quantity;
+      else quantity = null;
+      out.push({
+        name: ex.name,
+        normalized_name: item.normalized_name,
+        unit: ex.unit ?? item.unit,
+        quantity,
+        sources: 2,
+      });
+    } else {
+      // Incompatible units: the new detection replaces the old row.
+      out.push(item);
+    }
+  }
+
+  for (const [key, e] of existingByName) {
+    if (!consumed.has(key)) {
+      out.push({
+        name: e.name,
+        normalized_name: key,
+        unit: e.unit,
+        quantity: e.quantity,
+        sources: 1,
+      });
+    }
+  }
+
+  // The pantry table allows ONE row per normalized name (unique constraint).
+  // If a batch somehow yields several incompatible-unit rows for the same
+  // name (e.g. "2 cups milk" + "200 g milk"), keep the first (primary) row.
+  const byName = new Map<string, MergedItem>();
+  for (const item of out) {
+    if (!byName.has(item.normalized_name)) byName.set(item.normalized_name, item);
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface GroceryRowLike {
+  normalized_name: string;
+  unit: string | null;
+  quantity: number | null;
+}
+
+/**
+ * Given the list's current rows and the in-memory merged result, return only
+ * the rows whose quantity actually changed (or that are new). Unchanged rows —
+ * including already-purchased ones — are left untouched in the DB so their
+ * `completed` state is preserved (blueprint KI-1).
+ *
+ * Key = normalized_name + raw unit string (matches the DB unique constraint on
+ * (grocery_list_id, normalized_name, unit_key) where unit_key = COALESCE(unit,'')).
+ */
+export function selectChangedGroceryItems(
+  current: GroceryRowLike[],
+  merged: MergedItem[],
+): Omit<MergedItem, "sources">[] {
+  const currentByKey = new Map<string, GroceryRowLike>();
+  for (const c of current) {
+    const key = `${c.normalized_name}\u0000${c.unit ?? ""}`;
+    if (!currentByKey.has(key)) currentByKey.set(key, c);
+  }
+  const changed: Omit<MergedItem, "sources">[] = [];
+  for (const m of merged) {
+    const key = `${m.normalized_name}\u0000${m.unit ?? ""}`;
+    const c = currentByKey.get(key);
+    if (c && c.quantity === m.quantity) continue; // unchanged — keep DB row (and its completed flag)
+    changed.push({ name: m.name, normalized_name: m.normalized_name, quantity: m.quantity, unit: m.unit });
+  }
+  return changed;
 }

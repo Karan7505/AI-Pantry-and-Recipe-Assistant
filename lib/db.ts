@@ -1,4 +1,5 @@
 import { createClient } from "./supabase/server";
+import { persistedRecipeSchema } from "./ai/schemas";
 import type {
   PantryItem,
   Recipe,
@@ -65,18 +66,28 @@ export async function deletePantryItem(userId: string, id: string): Promise<void
   if (error) dbError("deletePantryItem", error);
 }
 
-export async function createScan(
-  userId: string,
-  imageUrl: string | null,
-  detected: Ingredient[],
-): Promise<void> {
+/**
+ * Audit row for a detection. Images are deliberately never persisted
+ * (privacy) — only the AI's parsed result is stored.
+ */
+export async function createScan(userId: string, detected: Ingredient[]): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("scans").insert({
     user_id: userId,
-    image_url: imageUrl,
     detected_data: detected,
   });
   if (error) dbError("createScan", error);
+}
+
+// Recipe JSONB is validated on read (blueprint KI-7): a malformed row degrades
+// to "not found" instead of crashing the detail page or feeding bad data to the UI.
+function parseRecipeRow(row: RecipeRow): { id: string; recipe: Recipe } | null {
+  const parsed = persistedRecipeSchema.safeParse(row.recipe_data);
+  if (!parsed.success) {
+    console.error(`[db:recipe] invalid recipe_data for row ${row.id}:`, parsed.error.issues.slice(0, 3));
+    return null;
+  }
+  return { id: row.id, recipe: parsed.data as Recipe };
 }
 
 export async function getRecipes(userId: string): Promise<{ id: string; recipe: Recipe }[]> {
@@ -88,7 +99,9 @@ export async function getRecipes(userId: string): Promise<{ id: string; recipe: 
     .order("created_at", { ascending: false })
     .limit(30);
   if (error) dbError("getRecipes", error);
-  return (data ?? []).map((r: RecipeRow) => ({ id: r.id, recipe: r.recipe_data as Recipe }));
+  return (data ?? [])
+    .map((r: RecipeRow) => parseRecipeRow(r))
+    .filter((r): r is { id: string; recipe: Recipe } => r !== null);
 }
 
 export async function getRecipe(userId: string, id: string): Promise<{ id: string; recipe: Recipe } | null> {
@@ -100,7 +113,7 @@ export async function getRecipe(userId: string, id: string): Promise<{ id: strin
     .eq("id", id)
     .single();
   if (error) return null; // 404/RLS → treat as "not yours"
-  return { id: (data as RecipeRow).id, recipe: (data as RecipeRow).recipe_data as Recipe };
+  return parseRecipeRow(data as RecipeRow);
 }
 
 export async function saveRecipe(
@@ -156,6 +169,14 @@ type GroceryItemInput = Omit<GroceryItemRow, "id" | "grocery_list_id" | "created
   completed?: boolean;
 };
 
+/**
+ * True upsert (blueprint KI-1). Requires migration 0003: UNIQUE
+ * (grocery_list_id, normalized_name, unit_key) where unit_key is a stored
+ * generated column COALESCE(unit,''). On conflict the row is updated
+ * (quantity is pre-summed by the caller; completed resets to false because a
+ * re-added item needs shopping again). Callers must pass only CHANGED rows
+ * (see selectChangedGroceryItems) so untouched purchased items keep their state.
+ */
 export async function upsertGroceryItems(
   listId: string,
   items: GroceryItemInput[],
@@ -167,7 +188,9 @@ export async function upsertGroceryItems(
     grocery_list_id: listId,
     completed: i.completed ?? false,
   }));
-  const { error } = await supabase.from("grocery_items").insert(rows);
+  const { error } = await supabase
+    .from("grocery_items")
+    .upsert(rows, { onConflict: "grocery_list_id,normalized_name,unit_key" });
   if (error) dbError("upsertGroceryItems", error);
 }
 

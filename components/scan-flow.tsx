@@ -136,7 +136,7 @@ export default function ScanFlow() {
                 name: f.name,
                 quantity: f.quantity,
                 unit: f.unit,
-                category: undefined as Category | null | undefined,
+                category: f.category,
               })),
             );
             setSubmitting(false);
@@ -219,6 +219,8 @@ function Dropzone({
 }
 
 // ── Confirmation editor ──────────────────────────────────────────────────────
+type ConfirmedRow = Detected & { category: Category };
+
 function ConfirmEditor({
   items,
   onConfirm,
@@ -226,11 +228,11 @@ function ConfirmEditor({
   submitting,
 }: {
   items: Detected[];
-  onConfirm: (items: Detected[]) => void;
+  onConfirm: (items: ConfirmedRow[]) => void;
   onCancel: () => void;
   submitting: boolean;
 }) {
-  const [rows, setRows] = React.useState(
+  const [rows, setRows] = React.useState<ConfirmedRow[]>(
     items.map((i) => ({ ...i, category: guessCategory(i.name) })),
   );
 

@@ -3,6 +3,7 @@ import {
   pantryDetectionSchema,
   recipesResultSchema,
   aiNutritionSchema,
+  persistedRecipeSchema,
   scanInputSchema,
   recipeFiltersSchema,
 } from "../lib/ai/schemas";
@@ -95,6 +96,39 @@ describe("recipeFiltersSchema", () => {
     expect(recipeFiltersSchema.parse({}).excluded).toEqual([]);
     expect(recipeFiltersSchema.safeParse({ servings: 0 }).success).toBe(false);
     expect(recipeFiltersSchema.safeParse({ maxCookTimeMinutes: 1000 }).success).toBe(false);
+  });
+});
+
+describe("persistedRecipeSchema (KI-7: read-time validation of recipe_data)", () => {
+  const valid = {
+    title: "Pasta",
+    description: "Quick pasta",
+    mealType: "dinner",
+    cuisine: "Italian",
+    prepTimeMinutes: 10,
+    cookTimeMinutes: 15,
+    servings: 2,
+    ingredients: [
+      { name: "Pasta", quantity: 200, unit: "g", available: true, pantryQuantity: 250, pantryUnit: "g" },
+      { name: "Tomato", quantity: 2, unit: "pieces", available: false },
+    ],
+    ingredientsAvailable: ["Pasta"],
+    ingredientsMissing: ["Tomato"],
+    instructions: ["Boil water.", "Cook pasta."],
+    nutrition: { calories: 500, proteinGrams: 20, carbsGrams: 70, fatGrams: 15 },
+    matchScore: 50,
+  };
+
+  it("accepts a valid persisted recipe", () => {
+    expect(persistedRecipeSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("rejects malformed JSONB shapes", () => {
+    expect(persistedRecipeSchema.safeParse({ ...valid, title: "" }).success).toBe(false);
+    expect(persistedRecipeSchema.safeParse({ ...valid, instructions: [] }).success).toBe(false);
+    expect(persistedRecipeSchema.safeParse({ ...valid, nutrition: { calories: -5 } }).success).toBe(false);
+    expect(persistedRecipeSchema.safeParse(null).success).toBe(false);
+    expect(persistedRecipeSchema.safeParse("not an object").success).toBe(false);
   });
 });
 

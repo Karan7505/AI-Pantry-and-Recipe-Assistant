@@ -62,6 +62,49 @@ export const recipesResultSchema = z.object({
 });
 export type AiRecipesResult = z.infer<typeof recipesResultSchema>;
 
+// ── Persisted recipe contract ────────────────────────────────────────────────
+// The full shape stored in recipes.recipe_data. Used BOTH at write time
+// (saveRecipeAction) and read time (getRecipe/getRecipes — blueprint KI-7),
+// so a drifted/malformed JSONB row can never reach the UI.
+export const persistedRecipeSchema = z.object({
+  title: z.string().min(1).max(140),
+  description: z.string().max(2000).nullable(),
+  mealType: z.string().max(30).nullable(),
+  cuisine: z.string().max(60).nullable(),
+  prepTimeMinutes: z.number().int().min(0).max(10_000),
+  cookTimeMinutes: z.number().int().min(0).max(10_000),
+  servings: z.number().int().min(1).max(1000),
+  ingredients: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(120),
+        normalized_name: z.string().max(120).optional(),
+        quantity: z.number().positive().max(1_000_000).nullable(),
+        unit: z.string().max(40).nullable(),
+        available: z.boolean(),
+        pantryQuantity: z.number().max(1_000_000).nullable().optional(),
+        pantryUnit: z.string().max(40).nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(100),
+  ingredientsAvailable: z.array(z.string().max(120)).max(100),
+  ingredientsMissing: z.array(z.string().max(120)).max(100),
+  instructions: z.array(z.string().min(1).max(4000)).min(1).max(60),
+  nutrition: z.object({
+    calories: z.number().min(0).max(100_000),
+    proteinGrams: z.number().min(0).max(10_000),
+    carbsGrams: z.number().min(0).max(10_000),
+    fatGrams: z.number().min(0).max(10_000),
+    fiberGrams: z.number().min(0).max(10_000).optional(),
+    sugarGrams: z.number().min(0).max(10_000).optional(),
+    sodiumMilligrams: z.number().min(0).max(1_000_000).optional(),
+    saturatedFatGrams: z.number().min(0).max(10_000).optional(),
+  }),
+  matchScore: z.number().min(0).max(100),
+});
+export type PersistedRecipe = z.infer<typeof persistedRecipeSchema>;
+
 export const normalizedIngredientSchema = z.object({
   name: z.string().trim().min(1).max(120),
   normalized_name: z.string().trim().min(1).max(120),

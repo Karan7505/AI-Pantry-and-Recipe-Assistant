@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUid } from "./auth";
+import { persistedRecipeSchema } from "./ai/schemas";
 import {
   getUserPantry,
   upsertPantryItems,
@@ -17,7 +18,7 @@ import {
   deleteGroceryItem,
   clearCompletedGroceryItems,
 } from "./db";
-import { normalizeIngredientName, mergeIngredients } from "./ingredients";
+import { normalizeIngredientName, mergeIngredients, mergeWithPantry, selectChangedGroceryItems } from "./ingredients";
 import { rateLimit } from "./ratelimit";
 import { CATEGORIES, type Category, type Recipe } from "./types";
 
@@ -46,8 +47,24 @@ export async function addPantryItem(input: PantryInput): Promise<void> {
   const parsed = pantryInputSchema.safeParse(input);
   if (!parsed.success) badRequest();
   const { name, quantity, unit, category, expirationDate } = parsed.data;
+  // Adding an existing ingredient accumulates its quantity (blueprint KI-2);
+  // the edit modal (updatePantryAction) is the explicit overwrite path.
+  const key = normalizeIngredientName(name);
+  const existing = await getUserPantry(uid);
+  const merged = mergeWithPantry(
+    existing.map((e) => ({ name: e.name, quantity: e.quantity, unit: e.unit })),
+    [{ name, quantity, unit }],
+  );
+  const row = merged.find((m) => m.normalized_name === key);
   await upsertPantryItems(uid, [
-    { name, normalized_name: normalizeIngredientName(name), quantity, unit, category: category ?? null, expiration_date: expirationDate ?? null },
+    {
+      name: row?.name ?? name,
+      normalized_name: key,
+      quantity: row?.quantity ?? null,
+      unit: row?.unit ?? unit,
+      category: category ?? null,
+      expiration_date: expirationDate ?? null,
+    },
   ]);
   revalidatePath("/pantry");
   revalidatePath("/dashboard");
@@ -110,26 +127,37 @@ const confirmedItemsSchema = z
   .min(1)
   .max(200);
 
-export async function confirmPantryItems(
-  items: ConfirmedItem[],
-  imageUrl: string | null = null,
-): Promise<void> {
+export async function confirmPantryItems(items: ConfirmedItem[]): Promise<void> {
   const uid = await requireUser();
   const parsed = confirmedItemsSchema.safeParse(items);
   if (!parsed.success) badRequest();
   if (!(await rateLimit(uid, "pantry-confirm", 30))) throw new Error("Too many requests. Please slow down.");
 
-  const merged = mergeIngredients(parsed.data);
-  const rows = merged.map((i) => ({
+  // Merge the confirmed batch (intra-scan dedupe) AND into the existing
+  // pantry so rescans accumulate instead of overwriting (blueprint KI-2).
+  const batch = mergeIngredients(parsed.data);
+  const existing = await getUserPantry(uid);
+  const merged = mergeWithPantry(
+    existing.map((e) => ({ name: e.name, quantity: e.quantity, unit: e.unit })),
+    batch.map((b) => ({ name: b.name, quantity: b.quantity, unit: b.unit })),
+  );
+  // Write only rows that changed, so untouched items keep their category and
+  // expiration date (a full re-upsert would null those out).
+  const changed = selectChangedGroceryItems(
+    existing.map((e) => ({ normalized_name: e.normalized_name, unit: e.unit, quantity: e.quantity })),
+    merged,
+  );
+  const categories = new Map(parsed.data.map((i) => [normalizeIngredientName(i.name), i.category ?? null]));
+  const rows = changed.map((i) => ({
     name: i.name,
-    normalized_name: normalizeIngredientName(i.name),
+    normalized_name: i.normalized_name,
     quantity: i.quantity,
     unit: i.unit,
-    category: (i as { category?: Category }).category ?? null,
+    category: categories.get(i.normalized_name) ?? null,
     expiration_date: null,
   }));
   await upsertPantryItems(uid, rows);
-  await createScan(uid, imageUrl, parsed.data).catch((e) =>
+  await createScan(uid, parsed.data).catch((e) =>
     console.error("[scan:record]", (e as Error).message),
   );
   revalidatePath("/pantry");
@@ -137,40 +165,14 @@ export async function confirmPantryItems(
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────────
-const persistableRecipeSchema = z.object({
-  title: z.string().min(1).max(140),
-  description: z.string().max(2000).nullable(),
-  mealType: z.string().max(30).nullable(),
-  cuisine: z.string().max(60).nullable(),
-  prepTimeMinutes: z.number().int().min(0).max(10_000),
-  cookTimeMinutes: z.number().int().min(0).max(10_000),
-  servings: z.number().int().min(1).max(1000),
-  ingredients: z
-    .array(z.object({ name: z.string().min(1).max(120), quantity: z.number().positive().max(1_000_000).nullable(), unit: z.string().max(40).nullable() }))
-    .min(1)
-    .max(100),
-  ingredientsAvailable: z.array(z.string().max(120)).max(100),
-  ingredientsMissing: z.array(z.string().max(120)).max(100),
-  instructions: z.array(z.string().min(1).max(4000)).min(1).max(60),
-  nutrition: z.object({
-    calories: z.number().min(0).max(100_000),
-    proteinGrams: z.number().min(0).max(10_000),
-    carbsGrams: z.number().min(0).max(10_000),
-    fatGrams: z.number().min(0).max(10_000),
-    fiberGrams: z.number().min(0).max(10_000).optional(),
-    sugarGrams: z.number().min(0).max(10_000).optional(),
-    sodiumMilligrams: z.number().min(0).max(1_000_000).optional(),
-    saturatedFatGrams: z.number().min(0).max(10_000).optional(),
-  }),
-  matchScore: z.number().min(0).max(100),
-});
-
 export async function saveRecipeAction(recipe: Recipe): Promise<string> {
   const uid = await requireUser();
-  const parsed = persistableRecipeSchema.safeParse(recipe);
+  // Validate with the shared persisted contract (blueprint KI-7); store the
+  // ORIGINAL object (schema parsing would strip the availability flags).
+  const parsed = persistedRecipeSchema.safeParse(recipe);
   if (!parsed.success) badRequest();
   if (!(await rateLimit(uid, "save-recipe", 60))) throw new Error("Too many requests. Please slow down.");
-  const id = await saveRecipe(uid, parsed.data.title, parsed.data.description, parsed.data as Recipe);
+  const id = await saveRecipe(uid, parsed.data.title, parsed.data.description, recipe);
   revalidatePath("/dashboard");
   return id;
 }
@@ -199,7 +201,15 @@ export async function addMissingToGrocery(items: MissingIngredient[], recipeTitl
   const list = await getDefaultGroceryList(uid);
   const current = await getGroceryItems(list.id);
   const merged = mergeIngredients([...current.map(toMergeInput), ...missing.map(toMergeInput)]);
-  await upsertGroceryItems(list.id, merged.map((m) => ({
+  // Only write rows that actually changed (blueprint KI-1): a true upsert on
+  // (list, normalized_name, unit_key) then merges quantities in the DB and
+  // leaves untouched purchased items in their current state.
+  const changed = selectChangedGroceryItems(
+    current.map((c) => ({ normalized_name: c.normalized_name, unit: c.unit, quantity: c.quantity })),
+    merged,
+  );
+  if (changed.length === 0) return;
+  await upsertGroceryItems(list.id, changed.map((m) => ({
     name: m.name,
     normalized_name: normalizeIngredientName(m.name),
     quantity: m.quantity,
@@ -228,7 +238,12 @@ export async function addCustomGroceryItem(input: {
   const list = await getDefaultGroceryList(uid);
   const current = await getGroceryItems(list.id);
   const merged = mergeIngredients([...current.map(toMergeInput), { name: parsed.data.name, quantity: parsed.data.quantity, unit: parsed.data.unit }]);
-  await upsertGroceryItems(list.id, merged.map((m) => ({
+  const changed = selectChangedGroceryItems(
+    current.map((c) => ({ normalized_name: c.normalized_name, unit: c.unit, quantity: c.quantity })),
+    merged,
+  );
+  if (changed.length === 0) return;
+  await upsertGroceryItems(list.id, changed.map((m) => ({
     name: m.name,
     normalized_name: normalizeIngredientName(m.name),
     quantity: m.quantity,
