@@ -5,18 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** True when real (non-placeholder) Supabase credentials are present. Client-safe. */
-export function isSupabaseConfigured(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  return (
-    Boolean(url && key) &&
-    !url.includes("your-project-ref") &&
-    key.length > 20 &&
-    !key.startsWith("your-")
-  );
-}
-
 /**
  * Return a safe same-origin path for post-auth redirect (audit M-1).
  * Rejects absolute URLs (https://…), protocol-relative (//…), and control chars.
@@ -44,7 +32,7 @@ export function sanitizeNextPath(next: string | null | undefined, fallback = "/d
 export function formatQuantity(quantity: number | null, unit: string | null): string {
   if (quantity == null) return unit ? `some` : "unknown";
   if (unit) {
-    const label = quantity % 1 === 0 ? String(quantity) : String(quantity);
+    const label = String(quantity);
     return `${label} ${unit}`;
   }
   return String(quantity);

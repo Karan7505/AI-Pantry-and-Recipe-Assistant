@@ -42,6 +42,7 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
   const [editDraft, setEditDraft] = React.useState<Draft>(emptyDraft);
   const [busy, setBusy] = React.useState(false);
   const [adding, setAdding] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   const refresh = () => router.refresh();
 
@@ -55,13 +56,19 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
     e.preventDefault();
     if (!draft.name.trim()) return;
     setAdding(true);
-    await addPantryItem({
+    const res = await addPantryItem({
       name: draft.name,
       quantity: parseQty(draft.quantity),
       unit: draft.unit || null,
       category: (draft.category || "other") as Category,
       expirationDate: draft.expiration_date || null,
     });
+    if (!res.ok) {
+      setError(res.error ?? null);
+      setAdding(false);
+      return;
+    }
+    setError(null);
     setDraft(emptyDraft);
     setAdding(false);
     refresh();
@@ -82,27 +89,42 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
     e.preventDefault();
     if (!editing || !editDraft.name.trim()) return;
     setBusy(true);
-    await updatePantryAction(editing.id, {
+    const res = await updatePantryAction(editing.id, {
       name: editDraft.name,
       quantity: parseQty(editDraft.quantity),
       unit: editDraft.unit || null,
       category: (editDraft.category || "other") as Category,
       expirationDate: editDraft.expiration_date || null,
     });
-    setEditing(null);
     setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? null);
+      return; // keep the modal open so the edit can be retried
+    }
+    setError(null);
+    setEditing(null);
     refresh();
   };
 
   const doDelete = async (id: string) => {
     setBusy(true);
-    await deletePantryAction(id);
+    const res = await deletePantryAction(id);
     setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? null);
+      return;
+    }
+    setError(null);
     refresh();
   };
 
   const step = async (id: string, delta: number) => {
-    await adjustPantryQuantity(id, delta);
+    const res = await adjustPantryQuantity(id, delta);
+    if (!res.ok) {
+      setError(res.error ?? null);
+      return;
+    }
+    setError(null);
     refresh();
   };
 
@@ -118,6 +140,13 @@ export default function PantryManager({ initialItems }: { initialItems: PantryIt
           Add item
         </Button>
       </div>
+
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-tomato-600/20 bg-tomato-50 px-4 py-2.5 text-sm text-tomato-600">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 rounded-lg p-1 hover:bg-tomato-600/10 focus-ring">×</button>
+        </div>
+      )}
 
       {items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">

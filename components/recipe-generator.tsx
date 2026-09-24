@@ -40,9 +40,13 @@ export default function RecipeGenerator({ pantry }: { pantry: string[] }) {
 
   const save = async (r: Recipe) => {
     setSaving(r.title);
-    const id = await saveRecipeAction(r);
+    const res = await saveRecipeAction(r);
     setSaving(null);
-    router.push(`/recipes/${id}`);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.push(`/recipes/${res.value}`);
   };
 
   return (

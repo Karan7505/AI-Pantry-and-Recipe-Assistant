@@ -6,12 +6,7 @@ vi.mock("../lib/ai/provider", () => ({
 }));
 
 import { callStructured } from "../lib/ai/provider";
-import {
-  analyzePantryImage,
-  generateRecipes,
-  generateNutrition,
-  normalizeIngredients,
-} from "../lib/ai/services";
+import { analyzePantryImage, generateRecipes } from "../lib/ai/services";
 import { AiError } from "../lib/ai/errors";
 
 const mocked = vi.mocked(callStructured);
@@ -142,48 +137,4 @@ describe("generateRecipes", () => {
   });
 });
 
-describe("generateNutrition", () => {
-  it("returns validated nutrition", async () => {
-    mocked.mockResolvedValue({ calories: 400, proteinGrams: 10, carbsGrams: 40, fatGrams: 20, fiberGrams: 3 });
-    const n = await generateNutrition("Omelette", ["Eggs", "Cheese"]);
-    expect(n.calories).toBe(400);
-    expect(n.fiberGrams).toBe(3);
-  });
 
-  it("rejects invalid values", async () => {
-    mocked.mockResolvedValue({ calories: -10, proteinGrams: 10, carbsGrams: 40, fatGrams: 20 });
-    await expect(generateNutrition("X", ["a"])).rejects.toMatchObject({ code: "invalid_response" });
-  });
-});
-
-describe("normalizeIngredients", () => {
-  it("uses AI output when counts align", async () => {
-    mocked.mockResolvedValue({
-      ingredients: [
-        { name: "Tomatoes", normalized_name: "Tomato", category: "vegetable" },
-        { name: "EGGS", normalized_name: "Egg", category: "egg" },
-      ],
-    });
-    const out = await normalizeIngredients(["Tomatoes", "EGGS"]);
-    expect(out).toHaveLength(2);
-    expect(out[0].normalized_name).toBe("Tomato");
-  });
-
-  it("falls back to deterministic normalization when the AI fails", async () => {
-    mocked.mockRejectedValue(new AiError("down", "timeout"));
-    const out = await normalizeIngredients(["Tomatoes", "tomato", "EGGS"]);
-    // deterministic dedupe: tomato (2) + egg (1)
-    expect(out.map((i) => i.normalized_name).sort()).toEqual(["egg", "tomato"]);
-  });
-
-  it("falls back when counts misalign", async () => {
-    mocked.mockResolvedValue({ ingredients: [{ name: "Tomatoes", normalized_name: "Tomato" }] });
-    const out = await normalizeIngredients(["Tomatoes", "Eggs"]);
-    expect(out).toHaveLength(2);
-  });
-
-  it("returns [] for empty input without calling the model", async () => {
-    expect(await normalizeIngredients([])).toEqual([]);
-    expect(mocked).not.toHaveBeenCalled();
-  });
-});

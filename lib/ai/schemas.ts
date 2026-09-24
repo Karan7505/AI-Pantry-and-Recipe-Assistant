@@ -82,8 +82,6 @@ export const persistedRecipeSchema = z.object({
         quantity: z.number().positive().max(1_000_000).nullable(),
         unit: z.string().max(40).nullable(),
         available: z.boolean(),
-        pantryQuantity: z.number().max(1_000_000).nullable().optional(),
-        pantryUnit: z.string().max(40).nullable().optional(),
       }),
     )
     .min(1)

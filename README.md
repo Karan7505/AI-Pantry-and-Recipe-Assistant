@@ -36,7 +36,7 @@ Pantry is a full-stack web app that turns photos of your fridge, pantry, or groc
 
 ### Pantry Management
 - Full CRUD with ±1 quantity steppers
-- **Name normalization & dedupe** — `tomato`, `Tomato`, and `Tomatoes` always collapse into a single entry; rescans merge into the existing pantry instead of duplicating
+- **Name normalization & dedupe** — `tomato`, `Tomato`, and `Tomatoes` always collapse into a single entry; rescans and re-adds **accumulate quantities** (2 + 1 → 3) instead of duplicating or overwriting
 - Search + category filters (vegetable, fruit, meat, dairy, spice, …)
 - Expiry tracking with "N days left" / "expired" badges
 
@@ -94,8 +94,8 @@ Pantry is a full-stack web app that turns photos of your fridge, pantry, or groc
 **Design principles**
 
 1. **Server owns trust.** All DB access happens server-side through [lib/db.ts](lib/db.ts); RLS is the second wall. Server actions re-verify the session on every call.
-2. **AI is a bounded, typed dependency.** [lib/ai/services.ts](lib/ai/services.ts) exposes four functions (`analyzePantryImage`, `generateRecipes`, `generateNutrition`, `normalizeIngredients`). Each maps raw model JSON through a Zod schema, falls back to deterministic logic where safe (e.g. normalization), and throws a typed `AiError` otherwise. The UI only ever sees typed data or a user-safe message.
-3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 60 offline unit tests.
+2. **AI is a bounded, typed dependency.** [lib/ai/services.ts](lib/ai/services.ts) exposes the two live AI services (`analyzePantryImage`, `generateRecipes`). Each maps raw model JSON through a Zod schema, retries transient provider failures (429/5xx/network) with 1s/2s backoff inside a 60 s total budget, and throws a typed `AiError` otherwise. The UI only ever sees typed data or a user-safe message.
+3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 75 offline unit tests.
 4. **Provider portability.** [lib/config.ts](lib/config.ts) resolves OpenAI vs Gemini from environment variables; [lib/ai/provider.ts](lib/ai/provider.ts) isolates HTTP, timeouts (60 s), rate-limit/auth mapping, and JSON extraction (handles markdown fences and embedded objects).
 
 **Data model** (see [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql))
@@ -123,7 +123,7 @@ Every table is RLS-protected: `user_id = auth.uid()` for direct tables; grocery 
 | Validation | [Zod](https://zod.dev) — all AI output and API inputs |
 | UI | React 18 + Tailwind CSS (custom herb/tomato/cream design system) |
 | Data viz | [`@tremor/react`](https://tremor.so) — nutrition charts + stat cards |
-| Testing | [Vitest](https://vitest.dev) — 60 offline unit tests |
+| Testing | [Vitest](https://vitest.dev) — 75 offline unit tests |
 | Lint | ESLint (`next/core-web-vitals`) |
 
 ---
@@ -148,10 +148,12 @@ npm install
 cp .env.example .env.local
 #    → edit .env.local with your real values (table below)
 
-# 3. Create the database schema
-#    Supabase Dashboard → SQL Editor → paste & run:
+# 3. Create the database schema (manual — see docs/MIGRATIONS.md)
+#    Supabase Dashboard → SQL Editor → paste & run, in order:
 #      supabase/migrations/0001_init.sql
-
+#      supabase/migrations/0002_grocery_items_update_policy.sql
+#      supabase/migrations/0003_grocery_upsert_support.sql
+#
 # 4. Run
 npm run dev
 # → http://localhost:3000
@@ -199,7 +201,7 @@ All variables live in `.env.local` (gitignored). Copy `.env.example` as a templa
 
 | Variable | Default | Description |
 |---|---|---|
-| `MAX_IMAGE_MB` | `8` | Client-side max file size for scan uploads (MB). |
+| `NEXT_PUBLIC_MAX_IMAGE_MB` | `8` | Max file size per scan photo, enforced in the browser before upload (MB). |
 
 > ⚠️ **Never commit `.env.local`.** It is covered by `.gitignore`. The service-role key must remain server-side — if it leaks, rotate it in the Supabase dashboard.
 
@@ -229,7 +231,7 @@ On the recipe detail page, click **Add N missing items to grocery list**. On **G
 
 ### 6. Re-scan to refresh
 
-Restocked? Run another scan — quantities merge with what you already have. Cooked something? Remove it (or set its quantity to 0) and the recipes + match scores update next time you generate.
+Restocked? Run another scan — quantities are added to what you already have (2 + 1 → 3). Cooked something? Remove it (or set its quantity to 0) and the recipes + match scores update next time you generate.
 
 ---
 
@@ -253,8 +255,7 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
 │   │   └── settings/                 #   account info, AI provider status, sign out
 │   └── api/
 │       ├── pantry/scan/route.ts      # POST → vision detection
-│       ├── recipes/route.ts          # POST → recipe generation (live pantry context)
-│       └── nutrition/route.ts        # POST → per-serving nutrition estimate
+│       └── recipes/route.ts          # POST → recipe generation (live pantry context, nutrition embedded)
 ├── lib/
 │   ├── types.ts                      # Domain types (shared by DB, AI, UI)
 │   ├── config.ts                     # AI provider resolution from env
@@ -264,13 +265,16 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
 │   ├── actions.ts                    # "use server" — auth actions
 │   ├── actions-data.ts               # "use server" — pantry / recipe / grocery actions
 │   ├── db.ts                         # Server-only, user-scoped Supabase queries
+│   ├── ratelimit.ts                  # In-memory per-user/per-route limiter (injectable clock)
+│   ├── logger.ts                     # Structured JSON error logging (observability seam)
+│   ├── result.ts                     # ActionResult wrapper — actions never throw across the wire
 │   ├── utils.ts                      # Formatting + helpers
 │   ├── ai/
 │   │   ├── errors.ts                 # AiError — typed, user-safe error codes
 │   │   ├── schemas.ts                # Zod contracts for all AI output + API inputs
 │   │   ├── prompts.ts                # System/user prompt builders
 │   │   ├── provider.ts               # HTTP + timeout + rate-limit mapping + JSON extraction
-│   │   └── services.ts               # The 4 public AI service functions
+│   │   └── services.ts               # The 2 public AI service functions
 │   └── supabase/
 │       ├── client.ts                 # Browser client (cookie sessions)
 │       └── server.ts                 # Server client (requests + service role)
@@ -318,10 +322,11 @@ Restocked? Run another scan — quantities merge with what you already have. Coo
                     ┌──────────────┴──────────────┐
                     ▼                             ▼
             /recipes/[id]                  "Add missing to grocery"
-        + /api/nutrition ──► nutrition AI    → mergeIngredients() (unit-aware)
-          (Tremor chart,            │            → grocery_items (persisted)
-           "AI estimate" label)     ▼
-                          save recipe → recipes table
+        (Tremor nutrition chart,       → mergeIngredients() (unit-aware)
+         "AI estimate" label)         → grocery_items (true upsert)
+                     │
+                     ▼
+          save recipe → recipes table
 ```
 
 **Where the deterministic logic wins**
@@ -362,7 +367,9 @@ The suite is fully offline — no API keys or network required. It covers:
 | `tests/ingredients.test.ts` | Name normalization/casing/plurals, synonym folding, unit canonicalization, compatible-vs-incompatible merging, dedupe |
 | `tests/match.test.ts` | Match scoring, availability flagging, ranking tie-breaks, label thresholds |
 | `tests/schemas.test.ts` | Every Zod contract (valid/invalid), plus tolerant JSON extraction (fences, embedded objects, garbage) |
-| `tests/ai-services.test.ts` | All four services with a mocked transport: happy paths, empty results, malformed model output, provider errors (rate limit, timeout), and deterministic fallbacks |
+| `tests/ai-services.test.ts` | Both AI services with a mocked transport: happy paths, empty results, malformed model output, provider errors |
+| `tests/merge-pantry.test.ts` | Rescan/manual-add accumulation (sum, keep-when-unknown, incompatible-overwrite) and changed-row selection for grocery upserts |
+| `tests/ai-retry.test.ts` | Retry policy: 429/5xx/network retried with backoff; auth/4xx/invalid/timeout never retried; budget respected |
 | `tests/ratelimit.test.ts` | Per-user/per-route window limits, expiry, isolation |
 | `tests/security.test.ts` | Post-auth redirect sanitization (open-redirect guard), scan upload MIME/size caps, filter input caps |
 

@@ -109,7 +109,7 @@ describe("persistedRecipeSchema (KI-7: read-time validation of recipe_data)", ()
     cookTimeMinutes: 15,
     servings: 2,
     ingredients: [
-      { name: "Pasta", quantity: 200, unit: "g", available: true, pantryQuantity: 250, pantryUnit: "g" },
+      { name: "Pasta", quantity: 200, unit: "g", available: true },
       { name: "Tomato", quantity: 2, unit: "pieces", available: false },
     ],
     ingredientsAvailable: ["Pasta"],

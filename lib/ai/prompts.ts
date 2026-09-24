@@ -81,21 +81,4 @@ export function buildRecipeUserPrompt(
   ].join("\n");
 }
 
-export const NUTRITION_SYSTEM = `You are a careful nutrition estimator.
-Return ONLY valid JSON: { "calories": number, "proteinGrams": number, "carbsGrams": number, "fatGrams": number, "fiberGrams": number, "sugarGrams": number, "sodiumMilligrams": number, "saturatedFatGrams": number }
-These are honest per-serving ESTIMATES for the given recipe. Use realistic values for typical portion sizes. Output JSON only.`;
 
-export function buildNutritionUserPrompt(recipeTitle: string, ingredients: string[]): string {
-  return [
-    `Estimate the per-serving nutrition for this recipe: "${recipeTitle}"`,
-    `Ingredients: ${ingredients.join(", ")}`,
-  ].join("\n");
-}
-
-export const NORMALIZE_SYSTEM = `You are an ingredient-normalization engine.
-Given raw ingredient names, return canonical, deduplicated names and a category for each.
-Return ONLY valid JSON: { "ingredients": [ { "name": string, "normalized_name": string, "category": string|null } ] }
-- "name" is the input item.
-- "normalized_name" is a clean, singular, title-cased canonical form (e.g. "Tomatoes" -> "Tomato", "EGGS" -> "Egg", "basmati rice" -> "Basmati Rice").
-- "category" one of: vegetable, fruit, meat, fish, dairy, egg, drink, sauce, condiment, grain, spice, packaged, other.
-- Do NOT drop or invent items; keep the same count/order. Output JSON only.`;

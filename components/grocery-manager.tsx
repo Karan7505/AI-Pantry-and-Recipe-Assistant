@@ -19,20 +19,35 @@ export default function GroceryManager({ initialItems }: { initialItems: Grocery
   const [qty, setQty] = React.useState("");
   const [unit, setUnit] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   const refresh = () => router.refresh();
   const pending = items.filter((i) => !i.completed);
   const done = items.filter((i) => i.completed);
 
   const toggle = async (item: GroceryItemRow) => {
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, completed: !i.completed } : i)));
-    await toggleGroceryItem(item.id, !item.completed);
+    const prev = items; // snapshot for rollback
+    setItems((p) => p.map((i) => (i.id === item.id ? { ...i, completed: !i.completed } : i)));
+    const res = await toggleGroceryItem(item.id, !item.completed);
+    if (!res.ok) {
+      setItems(prev);
+      setError(res.error ?? null);
+      return;
+    }
+    setError(null);
     refresh();
   };
 
   const remove = async (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id));
-    await removeGroceryItem(id);
+    const prev = items;
+    setItems((p) => p.filter((i) => i.id !== id));
+    const res = await removeGroceryItem(id);
+    if (!res.ok) {
+      setItems(prev);
+      setError(res.error ?? null);
+      return;
+    }
+    setError(null);
     refresh();
   };
 
@@ -40,11 +55,16 @@ export default function GroceryManager({ initialItems }: { initialItems: Grocery
     e.preventDefault();
     if (!name.trim()) return;
     const n = parseFloat(qty);
-    await addCustomGroceryItem({
+    const res = await addCustomGroceryItem({
       name: name.trim(),
       quantity: Number.isFinite(n) && n > 0 ? n : null,
       unit: unit.trim() || null,
     });
+    if (!res.ok) {
+      setError(res.error ?? null); // keep the form values so the user can retry
+      return;
+    }
+    setError(null);
     setName("");
     setQty("");
     setUnit("");
@@ -53,9 +73,16 @@ export default function GroceryManager({ initialItems }: { initialItems: Grocery
 
   const clearDone = async () => {
     setBusy(true);
-    setItems((prev) => prev.filter((i) => !i.completed));
-    await clearPurchasedGrocery();
+    const prev = items;
+    setItems((p) => p.filter((i) => !i.completed));
+    const res = await clearPurchasedGrocery();
     setBusy(false);
+    if (!res.ok) {
+      setItems(prev);
+      setError(res.error ?? null);
+      return;
+    }
+    setError(null);
     refresh();
   };
 
@@ -74,6 +101,13 @@ export default function GroceryManager({ initialItems }: { initialItems: Grocery
           </Button>
         )}
       </div>
+
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-tomato-600/20 bg-tomato-50 px-4 py-2.5 text-sm text-tomato-600">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 rounded-lg p-1 hover:bg-tomato-600/10 focus-ring">×</button>
+        </div>
+      )}
 
       {/* Add custom */}
       <Card className="p-4">

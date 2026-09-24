@@ -38,13 +38,6 @@ const nextConfig = {
       },
     ];
   },
-  images: {
-    remotePatterns: [
-      // Allow Supabase Storage / CDN-hosted images
-      { protocol: "https", hostname: "**.supabase.co" },
-      { protocol: "https", hostname: "**.supabase.in" },
-    ],
-  },
 };
 
 export default nextConfig;

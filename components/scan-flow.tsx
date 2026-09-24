@@ -16,7 +16,7 @@ type Detected = {
 type Stage = "upload" | "working" | "confirm";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
-const MAX_MB = 8;
+const MAX_MB = (() => { const v = Number(process.env.NEXT_PUBLIC_MAX_IMAGE_MB); return Number.isFinite(v) && v > 0 ? v : 8; })();
 const MAX_IMAGES = 6;
 
 export default function ScanFlow() {
@@ -126,25 +126,33 @@ export default function ScanFlow() {
       )}
 
       {stage === "confirm" && (
-        <ConfirmEditor
-          items={detected}
-          onCancel={reset}
-          onConfirm={async (final) => {
-            setSubmitting(true);
-            await confirmPantryItems(
-              final.map((f) => ({
-                name: f.name,
-                quantity: f.quantity,
-                unit: f.unit,
-                category: f.category,
-              })),
-            );
-            setSubmitting(false);
-            router.push("/pantry");
-            router.refresh();
-          }}
-          submitting={submitting}
-        />
+        <>
+          {error && <ErrorState message={error} />}
+          <ConfirmEditor
+            items={detected}
+            onCancel={reset}
+            onConfirm={async (final) => {
+              setSubmitting(true);
+              const res = await confirmPantryItems(
+                final.map((f) => ({
+                  name: f.name,
+                  quantity: f.quantity,
+                  unit: f.unit,
+                  category: f.category,
+                })),
+              );
+              setSubmitting(false);
+              if (!res.ok) {
+                setError(res.error);
+                return; // stay on the confirm screen so the batch isn't lost
+              }
+              setError(null);
+              router.push("/pantry");
+              router.refresh();
+            }}
+            submitting={submitting}
+          />
+        </>
       )}
     </div>
   );

@@ -9,10 +9,10 @@ describe("rateLimit", () => {
   it("allows calls up to the limit within the window", () => {
     const u = uid();
     const t0 = 1_000_000;
-    for (let i = 0; i < RULES.nutrition.limit; i++) {
-      expect(rateLimit(u, "nutrition", t0 + i)).toBe(true);
+    for (let i = 0; i < RULES.recipes.limit; i++) {
+      expect(rateLimit(u, "recipes", t0 + i)).toBe(true);
     }
-    expect(rateLimit(u, "nutrition", t0 + 50)).toBe(false);
+    expect(rateLimit(u, "recipes", t0 + 50)).toBe(false);
   });
 
   it("resets after the window expires", () => {

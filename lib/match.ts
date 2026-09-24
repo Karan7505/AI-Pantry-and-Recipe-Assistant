@@ -70,8 +70,6 @@ export function finalizeRecipe(raw: RawRecipe, pantry: { name: string }[]): Reci
       quantity: i.quantity ?? null,
       unit: i.unit ?? null,
       available: Boolean(key && keys.has(key)),
-      pantryQuantity: null,
-      pantryUnit: null,
     };
   });
   const match = scoreRecipe(ingredients, pantry);

@@ -105,12 +105,10 @@ export interface Nutrition {
 
 export interface RecipeIngredient {
   name: string;
-  normalized_name: string;
   quantity: number | null;
   unit: string | null;
-  available: boolean; // present in the user's pantry
-  pantryQuantity: number | null; // how much the user has (if any)
-  pantryUnit: string | null;
+  available: boolean;
+  normalized_name?: string;
 }
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "any";

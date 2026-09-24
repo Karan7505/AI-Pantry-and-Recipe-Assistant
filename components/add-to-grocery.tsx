@@ -13,6 +13,7 @@ export default function AddToGrocery({
 }) {
   const [busy, setBusy] = React.useState(false);
   const [added, setAdded] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   if (items.length === 0) {
     return (
@@ -25,14 +26,26 @@ export default function AddToGrocery({
 
   const onAdd = async () => {
     setBusy(true);
-    await addMissingToGrocery(items, recipeTitle);
+    const res = await addMissingToGrocery(items, recipeTitle);
     setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setError(null);
     setAdded(true);
   };
 
   return (
-    <Button size="lg" onClick={onAdd} loading={busy} full>
-      {added ? "Added to grocery list" : `Add ${items.length} missing item${items.length === 1 ? "" : "s"} to grocery list`}
-    </Button>
+    <div>
+      <Button size="lg" onClick={onAdd} loading={busy} full>
+        {added ? "Added to grocery list" : `Add ${items.length} missing item${items.length === 1 ? "" : "s"} to grocery list`}
+      </Button>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-tomato-600">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

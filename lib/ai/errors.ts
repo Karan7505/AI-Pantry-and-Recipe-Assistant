@@ -14,7 +14,13 @@ export type AiErrorCode =
  */
 export class AiError extends Error {
   code: AiErrorCode;
-  constructor(message: string, code: AiErrorCode, readonly details?: string) {
+  /** Internal: safe to retry (429 / 5xx / network). Never surfaced to the UI. */
+  constructor(
+    message: string,
+    code: AiErrorCode,
+    readonly details?: string,
+    readonly retryable = false,
+  ) {
     super(message);
     this.name = "AiError";
     this.code = code;

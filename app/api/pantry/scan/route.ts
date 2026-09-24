@@ -5,6 +5,7 @@ import { analyzePantryImage } from "@/lib/ai/services";
 import { scanInputSchema } from "@/lib/ai/schemas";
 import { AiError } from "@/lib/ai/errors";
 import { rateLimit } from "@/lib/ratelimit";
+import { logError } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     if (err instanceof AiError) {
       return NextResponse.json({ ok: false, error: err.userMessage, code: err.code }, { status: 502 });
     }
-    console.error("[scan] unexpected error:", (err as Error).name, (err as Error).message);
+    logError("api:scan", "scan request failed", { error: (err as Error).message });
     return NextResponse.json({ ok: false, error: "Something went wrong while analyzing your images." }, { status: 500 });
   }
 }

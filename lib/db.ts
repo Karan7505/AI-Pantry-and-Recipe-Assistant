@@ -1,5 +1,6 @@
 import { createClient } from "./supabase/server";
 import { persistedRecipeSchema } from "./ai/schemas";
+import { logError } from "./logger";
 import type {
   PantryItem,
   Recipe,
@@ -18,7 +19,7 @@ import type {
 
 /** User-safe error; details go to server logs only. */
 function dbError(label: string, error: { message: string }): never {
-  console.error(`[db:${label}]`, error.message);
+  logError(`db:${label}`, "database operation failed", { error: error.message });
   throw new Error("A database operation failed. Please try again.");
 }
 
@@ -84,7 +85,10 @@ export async function createScan(userId: string, detected: Ingredient[]): Promis
 function parseRecipeRow(row: RecipeRow): { id: string; recipe: Recipe } | null {
   const parsed = persistedRecipeSchema.safeParse(row.recipe_data);
   if (!parsed.success) {
-    console.error(`[db:recipe] invalid recipe_data for row ${row.id}:`, parsed.error.issues.slice(0, 3));
+    logError("db:recipe", "invalid recipe_data skipped", {
+      rowId: row.id,
+      issues: parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    });
     return null;
   }
   return { id: row.id, recipe: parsed.data as Recipe };

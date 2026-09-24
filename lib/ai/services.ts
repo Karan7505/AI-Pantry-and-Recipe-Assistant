@@ -1,22 +1,14 @@
 import { z } from "zod";
 import { AiError } from "./errors";
 import { callStructured } from "./provider";
-import {
-  pantryDetectionSchema,
-  recipesResultSchema,
-  aiNutritionSchema,
-  normalizeResultSchema,
-} from "./schemas";
+import { pantryDetectionSchema, recipesResultSchema } from "./schemas";
 import {
   PANTRY_DETECTION_SYSTEM,
   buildDetectionUserPrompt,
   buildRecipeSystemPrompt,
   buildRecipeUserPrompt,
-  NUTRITION_SYSTEM,
-  buildNutritionUserPrompt,
-  NORMALIZE_SYSTEM,
 } from "./prompts";
-import { mergeIngredients, normalizeIngredientName, displayIngredientName } from "../ingredients";
+import { mergeIngredients, normalizeIngredientName } from "../ingredients";
 import { finalizeRecipe, rankRecipes } from "../match";
 import type { Recipe, RecipeFilters, Nutrition } from "../types";
 
@@ -130,57 +122,4 @@ export async function generateRecipes(
   return rankRecipes(recipes);
 }
 
-/**
- * generateNutrition — (re)estimate per-serving nutrition for a single recipe.
- * Used to backfill/refresh nutrition, or when a recipe lacks it.
- */
-export async function generateNutrition(title: string, ingredients: string[]): Promise<Nutrition> {
-  const raw = await callStructured<unknown>({
-    system: NUTRITION_SYSTEM,
-    user: buildNutritionUserPrompt(title, ingredients),
-  });
-  return validateWith(aiNutritionSchema, raw) as Nutrition;
-}
 
-export interface NormalizedIngredient {
-  name: string;
-  normalized_name: string;
-  category: string | null;
-}
-
-/**
- * normalizeIngredients — canonicalize + dedupe a list of raw names via the AI,
- * with a deterministic fallback (so the app works even if the AI is down).
- */
-export async function normalizeIngredients(names: string[]): Promise<NormalizedIngredient[]> {
-  if (names.length === 0) return [];
-  try {
-    const raw = await callStructured<unknown>({
-      system: NORMALIZE_SYSTEM,
-      user: JSON.stringify({ ingredients: names }),
-    });
-    const parsed = validateWith(normalizeResultSchema, raw);
-    if (parsed.ingredients.length !== names.length) {
-      return deterministicNormalize(names); // keep counts aligned
-    }
-    return parsed.ingredients.map((i) => ({
-      name: i.name,
-      normalized_name: i.normalized_name || normalizeIngredientName(i.name),
-      category: i.category ?? null,
-    }));
-  } catch {
-    return deterministicNormalize(names);
-  }
-}
-
-function deterministicNormalize(names: string[]): NormalizedIngredient[] {
-  const merged = mergeIngredients(names.map((n) => ({ name: n, quantity: null, unit: null })));
-  return merged.map((m) => ({
-    name: m.name,
-    normalized_name: m.normalized_name,
-    category: null,
-  }));
-}
-
-/** Display helper so callers don't have to re-import. */
-export { displayIngredientName };
