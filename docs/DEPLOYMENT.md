@@ -56,12 +56,27 @@ Keep the previous container image / Vercel deploy. Code rollbacks are always saf
 
 ## Post-deploy smoke checklist
 
-- [ ] `GET /` renders; `GET /dashboard` unauthenticated → redirects to `/login?next=/dashboard`
+### Automated — `scripts/smoke-test.mjs`
+
+```bash
+# Unauthenticated: landing page, security headers, /dashboard redirect, unauthenticated scan 401
+node scripts/smoke-test.mjs
+
+# Authenticated (add 413 oversized-body + 429 rate-limit checks).
+# NOTE: consumes ~12 of the account's 10/hour scan rate-limit slots — use an
+# account with a fresh window, at most once per hour.
+SMOKE_BASE_URL=https://your-app.example.com \
+SMOKE_COOKIE="sb-access-token=…" \
+node scripts/smoke-test.mjs
+```
+
+The script exits non-zero on any failed check, so it can be wired into deploy pipelines.
+
+### Manual (user-facing flows the script cannot exercise)
+
 - [ ] Sign up + login works (confirm email flow if enabled)
 - [ ] Scan 1 photo → detection → confirm → pantry shows it
 - [ ] Re-add the same ingredient → quantity **accumulates** (2 + 1 → 3)
 - [ ] Generate recipes → save → detail renders → "Add missing" → grocery list has **no duplicates**; adding the same recipe twice doesn't duplicate rows
 - [ ] Toggle purchased → refresh → still checked; "Add missing" again does **not** resurrect it as pending unless its quantity changed
-- [ ] Oversized scan payload → `413`; 11th scan in an hour → `429`
-- [ ] Response headers include `content-security-policy`, `x-content-type-options: nosniff`, `x-frame-options: DENY`
-- [ ] No `console.error` spam in the server logs for normal flows
+- [ ] No `console.error` spam in the server logs for normal flows (errors are now JSON lines: `{ts, level, tag, msg, …}`)

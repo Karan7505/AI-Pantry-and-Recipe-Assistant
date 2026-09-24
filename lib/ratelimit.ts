@@ -17,7 +17,6 @@ const HOUR = 3_600_000;
 export const RULES: Record<string, RateLimitRule> = {
   scan: { limit: 10, windowMs: HOUR },        // expensive vision calls
   recipes: { limit: 30, windowMs: HOUR },     // LLM generation
-  nutrition: { limit: 60, windowMs: HOUR },   // LLM calls
   "pantry-confirm": { limit: 30, windowMs: HOUR },
   "save-recipe": { limit: 60, windowMs: HOUR },
   "grocery-add": { limit: 60, windowMs: HOUR },

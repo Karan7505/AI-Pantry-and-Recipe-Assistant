@@ -60,7 +60,10 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Run on all paths except static assets.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // Run on all page routes except static assets. API routes are excluded on
+    // purpose: they self-authenticate and answer 401, while this proxy exists
+    // to redirect unauthenticated *browsers* to /login (a 307 to an HTML page
+    // is useless for programmatic API clients).
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

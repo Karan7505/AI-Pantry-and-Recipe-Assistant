@@ -145,7 +145,7 @@ export async function confirmPantryItems(items: ConfirmedItem[]): Promise<Action
     const uid = await requireUser();
     const parsed = confirmedItemsSchema.safeParse(items);
     if (!parsed.success) badRequest();
-    if (!(await rateLimit(uid, "pantry-confirm", 30))) throw new Error("Too many requests. Please slow down.");
+    if (!(await rateLimit(uid, "pantry-confirm"))) throw new Error("Too many requests. Please slow down.");
 
     // Merge the confirmed batch (intra-scan dedupe) AND into the existing
     // pantry so rescans accumulate instead of overwriting (blueprint KI-2).
@@ -187,7 +187,7 @@ export async function saveRecipeAction(recipe: Recipe): Promise<ActionResult<str
     // ORIGINAL object (schema parsing would strip the availability flags).
     const parsed = persistedRecipeSchema.safeParse(recipe);
     if (!parsed.success) badRequest();
-    if (!(await rateLimit(uid, "save-recipe", 60))) throw new Error("Too many requests. Please slow down.");
+    if (!(await rateLimit(uid, "save-recipe"))) throw new Error("Too many requests. Please slow down.");
     const id = await saveRecipe(uid, parsed.data.title, parsed.data.description, recipe);
     revalidatePath("/dashboard");
     return id;
@@ -209,7 +209,7 @@ export async function addMissingToGrocery(items: MissingIngredient[], recipeTitl
       .max(100)
       .safeParse(items);
     if (!parsed.success) badRequest();
-    if (!(await rateLimit(uid, "grocery-add", 60))) throw new Error("Too many requests. Please slow down.");
+    if (!(await rateLimit(uid, "grocery-add"))) throw new Error("Too many requests. Please slow down.");
 
     const pantry = await getUserPantry(uid);
     const pantryKeys = new Set(pantry.map((p) => normalizeIngredientName(p.name)));
@@ -253,7 +253,7 @@ export async function addCustomGroceryItem(input: {
       .object({ name: z.string().trim().min(1).max(120), quantity: z.number().positive().max(1_000_000).nullable(), unit: z.string().trim().max(40).nullable() })
       .safeParse(input);
     if (!parsed.success) badRequest();
-    if (!(await rateLimit(uid, "grocery-add", 60))) throw new Error("Too many requests. Please slow down.");
+    if (!(await rateLimit(uid, "grocery-add"))) throw new Error("Too many requests. Please slow down.");
 
     const list = await getDefaultGroceryList(uid);
     const current = await getGroceryItems(list.id);

@@ -95,7 +95,7 @@ Pantry is a full-stack web app that turns photos of your fridge, pantry, or groc
 
 1. **Server owns trust.** All DB access happens server-side through [lib/db.ts](lib/db.ts); RLS is the second wall. Server actions re-verify the session on every call.
 2. **AI is a bounded, typed dependency.** [lib/ai/services.ts](lib/ai/services.ts) exposes the two live AI services (`analyzePantryImage`, `generateRecipes`). Each maps raw model JSON through a Zod schema, retries transient provider failures (429/5xx/network) with 1s/2s backoff inside a 60 s total budget, and throws a typed `AiError` otherwise. The UI only ever sees typed data or a user-safe message.
-3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 75 offline unit tests.
+3. **Deterministic logic is pure and tested.** Normalization, unit-aware merging, match scoring, and ranking live in framework-free modules ([lib/ingredients.ts](lib/ingredients.ts), [lib/match.ts](lib/match.ts)) with 89 offline tests (75 unit + 14 integration against an in-memory Supabase).
 4. **Provider portability.** [lib/config.ts](lib/config.ts) resolves OpenAI vs Gemini from environment variables; [lib/ai/provider.ts](lib/ai/provider.ts) isolates HTTP, timeouts (60 s), rate-limit/auth mapping, and JSON extraction (handles markdown fences and embedded objects).
 
 **Data model** (see [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql))
@@ -123,7 +123,7 @@ Every table is RLS-protected: `user_id = auth.uid()` for direct tables; grocery 
 | Validation | [Zod](https://zod.dev) — all AI output and API inputs |
 | UI | React 18 + Tailwind CSS (custom herb/tomato/cream design system) |
 | Data viz | [`@tremor/react`](https://tremor.so) — nutrition charts + stat cards |
-| Testing | [Vitest](https://vitest.dev) — 75 offline unit tests |
+| Testing | [Vitest](https://vitest.dev) — 89 offline tests (unit + integration) |
 | Lint | ESLint (`next/core-web-vitals`) |
 
 ---
@@ -343,12 +343,13 @@ Restocked? Run another scan — quantities are added to what you already have (2
 | Command | What it does |
 |---|---|
 | `npm run dev` | Start the dev server (http://localhost:3000) |
-| `npm run build` | Typecheck + lint + production build |
+| `npm run build` | Production build (`next build`) |
 | `npm start` | Serve the production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | `eslint .` (next/core-web-vitals) |
 | `npm test` | Run all Vitest suites once |
 | `npm run test:watch` | Vitest in watch mode |
+| `node scripts/smoke-test.mjs` | Post-deploy smoke checks against a running instance (headers, auth redirects, 401/413/429) — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
 ---
 
@@ -356,8 +357,8 @@ Restocked? Run another scan — quantities are added to what you already have (2
 
 ```bash
 npm test
-# Test Files  6 passed (6)
-#      Tests  60 passed (60)
+# Test Files  9 passed (9)
+#      Tests  89 passed (89)
 ```
 
 The suite is fully offline — no API keys or network required. It covers:
@@ -372,6 +373,7 @@ The suite is fully offline — no API keys or network required. It covers:
 | `tests/ai-retry.test.ts` | Retry policy: 429/5xx/network retried with backoff; auth/4xx/invalid/timeout never retried; budget respected |
 | `tests/ratelimit.test.ts` | Per-user/per-route window limits, expiry, isolation |
 | `tests/security.test.ts` | Post-auth redirect sanitization (open-redirect guard), scan upload MIME/size caps, filter input caps |
+| `tests/integration/pantry-grocery.test.ts` | Server actions + data layer against an in-memory Supabase ([supabase-mock.ts](tests/integration/supabase-mock.ts)): rescan accumulation (2+1→3), grocery no-dupes + completed-state preservation, recipe JSONB validation on read, owned-item filtering, error-hygiene / rate-limit regressions |
 
 ---
 
@@ -387,7 +389,7 @@ Controls implemented (see [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for the full au
 - **Secrets**: no service-role key in the app; privileged keys never inlined into client bundles; Gemini key sent via header, not URL.
 - **AI output**: never trusted — every model response is Zod-validated; user-facing errors are canned and safe.
 
-**Still required before launch (manual):** apply `supabase/migrations/0002_grocery_items_update_policy.sql` to any existing Supabase project, run the two-account RLS verification matrix against the live database, set Supabase auth password minimum ≥ 8 in the dashboard, and deploy on Node 22.
+**Still required before launch (manual):** apply `supabase/migrations/0002_grocery_items_update_policy.sql` and `supabase/migrations/0003_grocery_upsert_support.sql` (in that order, after deploying this code — see [docs/MIGRATIONS.md](docs/MIGRATIONS.md)) to any existing Supabase project, run the two-account RLS verification matrix ([docs/RLS-POLICIES.md](docs/RLS-POLICIES.md)) against the live database, set Supabase auth password minimum ≥ 8 in the dashboard, deploy on Node 22 ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)), and run `node scripts/smoke-test.mjs` against the deployed URL.
 
 ---
 
